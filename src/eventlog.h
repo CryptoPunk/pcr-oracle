@@ -318,6 +318,7 @@ extern const char *		tpm_efi_variable_event_extract_full_varname(const tpm_parse
 extern const char *		tpm_event_decode_uuid(const unsigned char *data);
 extern parsed_cert_t *		efi_application_extract_signer(const tpm_parsed_event_t *parsed);
 extern buffer_t *		efi_application_locate_authority_record(const char *db, const parsed_cert_t *signer);
+extern const tpm_evdigest_t *	efi_application_event_hash(const char *filename, const tpm_algo_info_t *algo_info);
 
 extern bool			shim_variable_name_valid(const char *name);
 extern const char *		shim_variable_get_rtname(const char *name);

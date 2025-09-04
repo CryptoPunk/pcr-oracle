@@ -179,6 +179,39 @@ __tpm_event_efi_bsa_inspect_image(tpm_parsed_event_t *parsed)
 	return true;
 }
 
+const tpm_evdigest_t *
+efi_application_event_hash(const char *filename, const tpm_algo_info_t *algo_info)
+{
+	const tpm_evdigest_t *md;
+	digest_ctx_t *digest;
+	buffer_t *buffer;
+	pecoff_image_info_t *img_info;
+
+	debug("Reading BSA %s to predict event digest", filename);
+
+	buffer = runtime_read_file(filename, 0);
+
+	if (buffer == NULL)
+		fatal("Failed to locate BSA %s\n", filename);
+
+	debug("Computing authenticode digest using built-in PECOFF parser\n");
+
+	/* if successful, this takes ownership of buffer */
+	if ((img_info = pecoff_inspect(buffer, filename)) == NULL) {
+		fatal("PECOFF parser failed to inspect BSA %s\n", filename);
+	}
+
+	digest = digest_ctx_new(algo_info);
+
+	md = authenticode_get_digest(img_info, digest);
+
+	digest_ctx_free(digest);
+
+	pecoff_image_info_free(img_info);
+
+	return md;
+}
+
 static const tpm_evdigest_t *
 __pecoff_rehash_old(tpm_event_log_rehash_ctx_t *ctx, const char *filename)
 {

@@ -35,6 +35,7 @@
 #include "store.h"
 #include "testcase.h"
 #include "sd-boot.h"
+#include "authenticode.h"
 
 enum {
 	ACTION_NONE,
@@ -52,6 +53,7 @@ enum {
 	STOP_EVENT_NONE,
 	STOP_EVENT_GRUB_COMMAND,
 	STOP_EVENT_GRUB_FILE,
+	STOP_EVENT_BSA_PATH,
 };
 
 struct predictor {
@@ -167,7 +169,7 @@ usage(int exitval, const char *msg)
 		"                         tpm2_policypcr.\n"
 		"  --stop-event TYPE=ARG\n"
 		"                         During eventlog based prediction, stop processing the event log at the indicated\n"
-		"                         event. Event TYPE can be one of grub-command, grub-file.\n"
+		"                         event. Event TYPE can be one of grub-command, grub-file, bsa-path.\n"
 		"                         The meaning of event ARG depends on the type. Possible examples are\n"
 		"                         grub-command=cryptomount or grub-file=grub.cfg\n"
 		"  --after, --before\n"
@@ -192,6 +194,8 @@ usage(int exitval, const char *msg)
 		"Each pair is a type, and and argument. These types are currently recognized:\n"
 		"  string                 The PCR is extended with the string argument.\n"
 		"  file                   The argument is taken as a file name. The PCR is extended with the file's content.\n"
+		"  bsa                    The argument is a file name for a (new) Boot Services Application. The PCR is\n"
+		"	                  extended with the authenticode digest for that file.\n"
 		"  eventlog               Process the eventlog and apply updates for all events possible.\n"
 		"\n"
 		"After the PCR predictor has been extended with all updates specified, its value is printed to standard output.\n"
@@ -326,6 +330,9 @@ predictor_set_stop_event(struct predictor *pred, const char *event_desc, bool af
 	if (!__stop_event_parse(copy, &name, &value))
 		fatal("Cannot parse stop event \"%s\"\n", event_desc);
 
+	if (!strcmp(name, "bsa-path")) {
+		pred->stop_event.type = STOP_EVENT_BSA_PATH;
+	} else
 	if (!strcmp(name, "grub-command")) {
 		pred->stop_event.type = STOP_EVENT_GRUB_COMMAND;
 	} else
@@ -410,15 +417,46 @@ predictor_update_file(struct predictor *pred, unsigned int pcr_index, const char
 	predictor_extend_hash(pred, pcr_index, md);
 }
 
+static void
+predictor_update_bsa(struct predictor *pred, unsigned int pcr_index, const char *filename)
+{
+	const tpm_evdigest_t *md;
+
+	md = efi_application_event_hash(filename, pred->algo_info);
+	predictor_extend_hash(pred, pcr_index, md);
+}
+
 static bool
 __check_stop_event(tpm_event_t *ev, int type, const char *value, tpm_event_log_scan_ctx_t *ctx)
 {
 	const char *grub_arg = NULL;
 	const char *grub_cmd = NULL;
 	tpm_parsed_event_t *parsed;
+	const struct efi_device_path *efi_path;
+	const struct efi_device_path_item *item;
+	const char *bsa_file_path;
+	unsigned int i;
 
 	switch (type) {
 	case STOP_EVENT_NONE:
+		return false;
+
+	case STOP_EVENT_BSA_PATH:
+		if (ev->event_type != TPM2_EFI_BOOT_SERVICES_APPLICATION)
+			return false;
+
+		if (!(parsed = tpm_event_parse(ev, ctx)))
+			return false;
+
+		efi_path = &parsed->efi_bsa_event.device_path;
+
+		for (i = 0, item = efi_path->entries; i < efi_path->count; ++i, ++item) {
+			if ((bsa_file_path = __tpm_event_efi_device_path_item_file_path(item)) != NULL
+					&& !strcmp(bsa_file_path, value)) {
+				return true;
+			}
+		}
+
 		return false;
 
 	case STOP_EVENT_GRUB_COMMAND:
@@ -827,6 +865,9 @@ predictor_update_all(struct predictor *pred, int argc, char **argv)
 		} else
 		if (!strcmp(type, "file")) {
 			predictor_update_file(pred, pcr_index, arg);
+		} else
+		if (!strcmp(type, "bsa")) {
+			predictor_update_bsa(pred, pcr_index, arg);
 		} else {
 			fprintf(stderr, "Unsupported keyword \"%s\" while trying to update predictor\n", type);
 			usage(1, NULL);
@@ -1175,7 +1216,6 @@ main(int argc, char **argv)
 	switch (action) {
 	case ACTION_PREDICT:
 		pcr_selection = get_pcr_selection_argument(argc, argv, opt_algo);
-		end_arguments(argc, argv);
 		break;
 
 	case ACTION_STORE_PUBLIC_KEY:
