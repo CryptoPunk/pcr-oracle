@@ -672,7 +672,11 @@ predictor_pre_scan_eventlog(struct predictor *pred, tpm_event_t **stop_event_p)
 				error("Unable to parse %s event from TPM log\n", tpm_event_type_to_string(ev->event_type));
 				if (opt_debug)
 					__tpm_event_print(ev, debug);
-				fatal("Aborting.\n");
+				/* If it's not a PCR we care about, ignore the parse error */
+				if (pred->pcr_mask & (1<<ev->pcr_index))
+					fatal("Aborting.\n");
+				else
+					debug("Ignoring: event PCR %d\n", ev->pcr_index);
 			}
 		}
 
