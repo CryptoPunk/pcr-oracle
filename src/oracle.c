@@ -35,7 +35,6 @@
 #include "store.h"
 #include "testcase.h"
 #include "sd-boot.h"
-#include "authenticode.h"
 
 enum {
 	ACTION_NONE,
