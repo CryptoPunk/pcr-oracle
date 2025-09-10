@@ -425,15 +425,6 @@ predictor_update_bsa(struct predictor *pred, unsigned int pcr_index, const char 
 	predictor_extend_hash(pred, pcr_index, md);
 }
 
-static int strcicmp(char const *a, char const *b)
-{
-	for (;; a++, b++) {
-		int d = tolower((unsigned char)*a) - tolower((unsigned char)*b);
-		if (d != 0 || !*a)
-			return d;
-	}
-}
-
 static bool
 __check_stop_event(tpm_event_t *ev, int type, const char *value, tpm_event_log_scan_ctx_t *ctx)
 {
