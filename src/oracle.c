@@ -1369,6 +1369,90 @@ garden(const char *bios_measurements,
 		buffer_free(event_data);
 	}
 
+	/* Compute EFI_VARIABLE_AUTHORITY digest for db if provided */
+	if (efivar_db) {
+		/* EFI_CERT_X509_GUID: a159c0a5-e494-a74a-87b5-ab155c2bf072 */
+		static const unsigned char efi_cert_x509_guid[16] = {
+			0xa1, 0x59, 0xc0, 0xa5, 0xe4, 0x94, 0xa7, 0x4a,
+			0x87, 0xb5, 0xab, 0x15, 0x5c, 0x2b, 0xf0, 0x72
+		};
+		buffer_t *db_data;
+		uint32_t list_size, header_size, signature_size;
+		unsigned char list_type[16];
+		const unsigned char *sig_record = NULL;
+		unsigned int sig_record_len = 0;
+
+		db_data = buffer_read_file(efivar_db, 0);
+		if (!db_data) {
+			error("Failed to read EFI variable data from %s for authority\n", efivar_db);
+			return 1;
+		}
+
+		/* Skip the first 4 bytes (EFI variable attributes) if reading from efivars */
+		if (buffer_available(db_data) > 4) {
+			buffer_skip(db_data, 4);
+		}
+
+		/* Parse signature lists to find first X.509 certificate record */
+		while (buffer_available(db_data) >= 28) {
+			unsigned int payload_size;
+
+			if (!buffer_get(db_data, list_type, 16)
+			 || !buffer_get_u32le(db_data, &list_size)
+			 || !buffer_get_u32le(db_data, &header_size)
+			 || !buffer_get_u32le(db_data, &signature_size)) {
+				break;
+			}
+
+			/* Skip header if present */
+			if (header_size > 0) {
+				buffer_skip(db_data, header_size);
+			}
+
+			payload_size = list_size - 16 - 12 - header_size;
+
+			/* Check if this is an X.509 signature list */
+			if (memcmp(list_type, efi_cert_x509_guid, 16) == 0 && payload_size >= signature_size) {
+				/* Found X.509 list - get the first signature record */
+				sig_record = buffer_read_pointer(db_data);
+				sig_record_len = signature_size;
+				infomsg("Found X.509 signature record: %u bytes\n", sig_record_len);
+				break;
+			}
+
+			/* Skip to next list */
+			buffer_skip(db_data, payload_size);
+		}
+
+		if (sig_record && sig_record_len > 0) {
+			/* Build EFI_VARIABLE_AUTHORITY event with the signature record */
+			event_data = build_efi_variable_event(db_guid, "db",
+					sig_record, sig_record_len);
+			if (!event_data) {
+				error("Failed to build EFI variable authority event for db\n");
+				buffer_free(db_data);
+				return 1;
+			}
+
+			md = digest_compute(algo,
+					buffer_read_pointer(event_data),
+					buffer_available(event_data));
+			if (!md) {
+				error("Failed to compute digest for db authority\n");
+				buffer_free(db_data);
+				buffer_free(event_data);
+				return 1;
+			}
+
+			infomsg("EFI_VARIABLE_AUTHORITY digest for db: %s\n", digest_print_value(md));
+			buffer_free(event_data);
+		} else {
+			infomsg("No X.509 certificate records found in db\n");
+		}
+
+		buffer_free(db_data);
+	}
+
 	return 0;
 }
 
