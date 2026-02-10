@@ -47,6 +47,7 @@ enum {
 	ACTION_SIGN,
 	ACTION_SELFTEST,
 	ACTION_RSATEST,
+	ACTION_GARDEN,
 };
 
 enum {
@@ -105,6 +106,10 @@ enum {
 	OPT_TARGET_PLATFORM,
 	OPT_BOOT_ENTRY,
 	OPT_COMPARE_CURRENT,
+	OPT_BIOS_MEASUREMENTS,
+	OPT_EFIVAR_DB,
+	OPT_EFIVAR_PK,
+	OPT_EFIVAR_KEK,
 };
 
 static struct option options[] = {
@@ -140,6 +145,10 @@ static struct option options[] = {
 	{ "target-platform",	required_argument,	0,	OPT_TARGET_PLATFORM },
 	{ "next-kernel",	required_argument,	0,	OPT_BOOT_ENTRY },
 	{ "compare-current",	no_argument,		0,	OPT_COMPARE_CURRENT },
+	{ "bios-measurements",	required_argument,	0,	OPT_BIOS_MEASUREMENTS },
+	{ "efivar-db",		required_argument,	0,	OPT_EFIVAR_DB },
+	{ "efivar-pk",		required_argument,	0,	OPT_EFIVAR_PK },
+	{ "efivar-kek",		required_argument,	0,	OPT_EFIVAR_KEK },
 
 	{ NULL }
 };
@@ -1112,6 +1121,7 @@ get_action_argument(int argc, char **argv)
 		{ "sign",			ACTION_SIGN	},
 		{ "self-test",			ACTION_SELFTEST	},
 		{ "rsa-test",			ACTION_RSATEST	},
+		{ "garden",			ACTION_GARDEN	},
 
 		{ NULL, 0 },
 	};
@@ -1182,6 +1192,10 @@ main(int argc, char **argv)
 	char *opt_target_platform = NULL;
 	char *opt_boot_entry = NULL;
 	bool opt_compare_current = false;
+	char *opt_bios_measurements = NULL;
+	char *opt_efivar_db = NULL;
+	char *opt_efivar_pk = NULL;
+	char *opt_efivar_kek = NULL;
 	const target_platform_t *target;
 	unsigned int action_flags = 0;
 	unsigned int rsa_bits = 2048;
@@ -1287,6 +1301,17 @@ main(int argc, char **argv)
 			break;
 		case OPT_COMPARE_CURRENT:
 			opt_compare_current = true;
+		case OPT_BIOS_MEASUREMENTS:
+			opt_bios_measurements = optarg;
+			break;
+		case OPT_EFIVAR_DB:
+			opt_efivar_db = optarg;
+			break;
+		case OPT_EFIVAR_PK:
+			opt_efivar_pk = optarg;
+			break;
+		case OPT_EFIVAR_KEK:
+			opt_efivar_kek = optarg;
 			break;
 		case 'h':
 			usage(0, NULL);
@@ -1395,6 +1420,10 @@ main(int argc, char **argv)
 		end_arguments(argc, argv);
 		break;
 
+	case ACTION_GARDEN:
+		end_arguments(argc, argv);
+		break;
+
 	default:
 		fatal("Action %u not implemented", action);
 	}
@@ -1431,6 +1460,15 @@ main(int argc, char **argv)
 		if (!tpm_selftest(true))
 			return 1;
 		infomsg("TPM self test succeeded.\n");
+		return 0;
+	}
+
+	if (action == ACTION_GARDEN) {
+		infomsg("hello world\n");
+		(void) opt_bios_measurements;
+		(void) opt_efivar_db;
+		(void) opt_efivar_pk;
+		(void) opt_efivar_kek;
 		return 0;
 	}
 
@@ -1508,3 +1546,4 @@ main(int argc, char **argv)
 
 	return exit_code;
 }
+
