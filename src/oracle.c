@@ -1164,6 +1164,214 @@ get_pcr_selection_argument(int argc, char ** argv, const char *algo_name)
 	return pcr_selection;
 }
 
+/*
+ * Build an EFI_VARIABLE_DRIVER_CONFIG event buffer.
+ * The event structure is: GUID (16 bytes) + UnicodeName length (8 bytes) + Data length (8 bytes) + UnicodeName (UTF-16LE) + Data
+ */
+static buffer_t *
+build_efi_variable_event(const unsigned char *guid, const char *var_name,
+			 const void *raw_data, unsigned int raw_data_len)
+{
+	buffer_t *bp;
+	unsigned int var_len, name_len;
+
+	var_len = strlen(var_name);
+	/* Buffer needs: GUID (16) + 2 * UINT64 (16) + UTF16 name (2 * var_len) + data */
+	bp = buffer_alloc_write(16 + 8 + 8 + 2 * var_len + raw_data_len);
+	if (!bp)
+		return NULL;
+
+	if (!buffer_put(bp, guid, 16))
+		goto fail;
+
+	if (!buffer_put_u64le(bp, var_len))
+		goto fail;
+
+	if (!buffer_put_u64le(bp, raw_data_len))
+		goto fail;
+
+	if (!buffer_put_utf16le(bp, (char *)var_name, &name_len))
+		goto fail;
+
+	if (name_len != 2 * var_len)
+		goto fail;
+
+	if (raw_data_len > 0 && !buffer_put(bp, raw_data, raw_data_len))
+		goto fail;
+
+	return bp;
+
+fail:
+	buffer_free(bp);
+	return NULL;
+}
+
+
+static int
+garden(const char *bios_measurements,
+	   const char *efivar_db, const char *efivar_pk, const char *efivar_kek,
+	   const tpm_pcr_selection_t *pcr_selection,
+	   const char *opt_from,
+	   const char *opt_eventlog_path,
+	   const char *opt_output_format,
+	   const char *opt_boot_entry)
+{
+	/* EFI_IMAGE_SECURITY_DATABASE_GUID for db: d719b2cb-3d3a-4596-a3bc-dad00e67656f */
+	static const unsigned char db_guid[16] = {
+		0xcb, 0xb2, 0x19, 0xd7, 0x3a, 0x3d, 0x96, 0x45,
+		0xa3, 0xbc, 0xda, 0xd0, 0x0e, 0x67, 0x65, 0x6f
+	};
+	/* EFI_GLOBAL_VARIABLE for PK/KEK: 8be4df61-93ca-11d2-aa0d-00e098032b8c */
+	static const unsigned char global_guid[16] = {
+		0x61, 0xdf, 0xe4, 0x8b, 0xca, 0x93, 0xd2, 0x11,
+		0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c
+	};
+	buffer_t *file_data = NULL;
+	buffer_t *event_data = NULL;
+	const tpm_evdigest_t *md;
+	const tpm_algo_info_t *algo;
+
+	(void)bios_measurements;
+	(void)pcr_selection;
+	(void)opt_from;
+	(void)opt_eventlog_path;
+	(void)opt_output_format;
+	(void)opt_boot_entry;
+
+	/* Use SHA-256 algorithm */
+	algo = digest_by_name("sha256");
+	if (!algo) {
+		error("SHA-256 algorithm not available\n");
+		return 1;
+	}
+
+	/* Process db if provided */
+	if (efivar_db) {
+		file_data = buffer_read_file(efivar_db, 0);
+		if (!file_data) {
+			error("Failed to read EFI variable data from %s\n", efivar_db);
+			return 1;
+		}
+
+		/* Skip the first 4 bytes (EFI variable attributes) if reading from efivars */
+		if (buffer_available(file_data) > 4) {
+			buffer_skip(file_data, 4);
+		}
+
+		infomsg("db variable data length: %u bytes\n", buffer_available(file_data));
+
+		event_data = build_efi_variable_event(db_guid, "db",
+				buffer_read_pointer(file_data),
+				buffer_available(file_data));
+		if (!event_data) {
+			error("Failed to build EFI variable event for db\n");
+			buffer_free(file_data);
+			return 1;
+		}
+
+		md = digest_compute(algo,
+				buffer_read_pointer(event_data),
+				buffer_available(event_data));
+		if (!md) {
+			error("Failed to compute digest for db\n");
+			buffer_free(file_data);
+			buffer_free(event_data);
+			return 1;
+		}
+
+		infomsg("EFI_VARIABLE_DRIVER_CONFIG digest for db: %s\n", digest_print_value(md));
+
+		buffer_free(file_data);
+		buffer_free(event_data);
+		file_data = NULL;
+		event_data = NULL;
+	}
+
+	/* Process KEK if provided */
+	if (efivar_kek) {
+		file_data = buffer_read_file(efivar_kek, 0);
+		if (!file_data) {
+			error("Failed to read EFI variable data from %s\n", efivar_kek);
+			return 1;
+		}
+
+		/* Skip the first 4 bytes (EFI variable attributes) if reading from efivars */
+		if (buffer_available(file_data) > 4) {
+			buffer_skip(file_data, 4);
+		}
+
+		infomsg("KEK variable data length: %u bytes\n", buffer_available(file_data));
+
+		event_data = build_efi_variable_event(global_guid, "KEK",
+				buffer_read_pointer(file_data),
+				buffer_available(file_data));
+		if (!event_data) {
+			error("Failed to build EFI variable event for KEK\n");
+			buffer_free(file_data);
+			return 1;
+		}
+
+		md = digest_compute(algo,
+				buffer_read_pointer(event_data),
+				buffer_available(event_data));
+		if (!md) {
+			error("Failed to compute digest for KEK\n");
+			buffer_free(file_data);
+			buffer_free(event_data);
+			return 1;
+		}
+
+		infomsg("EFI_VARIABLE_DRIVER_CONFIG digest for KEK: %s\n", digest_print_value(md));
+
+		buffer_free(file_data);
+		buffer_free(event_data);
+		file_data = NULL;
+		event_data = NULL;
+	}
+
+	/* Process PK if provided */
+	if (efivar_pk) {
+		file_data = buffer_read_file(efivar_pk, 0);
+		if (!file_data) {
+			error("Failed to read EFI variable data from %s\n", efivar_pk);
+			return 1;
+		}
+
+		/* Skip the first 4 bytes (EFI variable attributes) if reading from efivars */
+		if (buffer_available(file_data) > 4) {
+			buffer_skip(file_data, 4);
+		}
+
+		infomsg("PK variable data length: %u bytes\n", buffer_available(file_data));
+
+		event_data = build_efi_variable_event(global_guid, "PK",
+				buffer_read_pointer(file_data),
+				buffer_available(file_data));
+		if (!event_data) {
+			error("Failed to build EFI variable event for PK\n");
+			buffer_free(file_data);
+			return 1;
+		}
+
+		md = digest_compute(algo,
+				buffer_read_pointer(event_data),
+				buffer_available(event_data));
+		if (!md) {
+			error("Failed to compute digest for PK\n");
+			buffer_free(file_data);
+			buffer_free(event_data);
+			return 1;
+		}
+
+		infomsg("EFI_VARIABLE_DRIVER_CONFIG digest for PK: %s\n", digest_print_value(md));
+
+		buffer_free(file_data);
+		buffer_free(event_data);
+	}
+
+	return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1463,14 +1671,13 @@ main(int argc, char **argv)
 		return 0;
 	}
 
-	if (action == ACTION_GARDEN) {
-		infomsg("hello world\n");
-		(void) opt_bios_measurements;
-		(void) opt_efivar_db;
-		(void) opt_efivar_pk;
-		(void) opt_efivar_kek;
-		return 0;
-	}
+  	if (action == ACTION_GARDEN)
+	{
+                return garden(opt_bios_measurements, opt_efivar_db,
+                              opt_efivar_pk, opt_efivar_kek, pcr_selection,
+                              opt_from, opt_eventlog_path, opt_output_format,
+                              opt_boot_entry);
+        }
 
 	if (action == ACTION_CREATE_AUTH_POLICY) {
 		if (!pcr_authorized_policy_create(pcr_selection, opt_rsa_private_key, opt_authorized_policy))
