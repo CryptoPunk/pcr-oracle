@@ -146,4 +146,6 @@ extern const char *	read_single_line_file(const char *path, char *buffer, size_t
 
 extern int		version_string_compare(const char *, const char *);
 
+extern int		strcicmp(char const *a, char const *b);
+
 #endif /* UTIL_H */

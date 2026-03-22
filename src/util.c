@@ -533,3 +533,13 @@ read_single_line_file(const char *path, char *buffer, size_t size)
 	fclose(fp);
 	return buffer;
 }
+
+int
+strcicmp(char const *a, char const *b)
+{
+	for (;; a++, b++) {
+		int d = tolower((unsigned char)*a) - tolower((unsigned char)*b);
+		if (d != 0 || !*a)
+			return d;
+	}
+}
