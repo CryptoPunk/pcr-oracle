@@ -36,6 +36,7 @@
 #include "store.h"
 #include "testcase.h"
 #include "sd-boot.h"
+#include "tpm.h"
 
 enum {
 	ACTION_NONE,
@@ -111,6 +112,7 @@ enum {
 	OPT_EFIVAR_DB,
 	OPT_EFIVAR_PK,
 	OPT_EFIVAR_KEK,
+	OPT_OWNER_PASSWORD,
 };
 
 static struct option options[] = {
@@ -151,6 +153,7 @@ static struct option options[] = {
 	{ "efivar-db",		required_argument,	0,	OPT_EFIVAR_DB },
 	{ "efivar-pk",		required_argument,	0,	OPT_EFIVAR_PK },
 	{ "efivar-kek",		required_argument,	0,	OPT_EFIVAR_KEK },
+	{ "owner-password",	required_argument,	0,	OPT_OWNER_PASSWORD },
 
 	{ NULL }
 };
@@ -204,6 +207,7 @@ usage(int exitval, const char *msg)
 		"  --auth PATH            Specify the authorized policy file\n"
 		"  --pcr-policy PATH      Specify the signed PCR policy file\n"
 		"  --target-platform PLAT Specify the target platform (e.g., tpm2.0, oldgrub)\n"
+		"  --owner-password PASS  Specify the TPM owner password\n"
 		"\n"
 		"The pcr-index argument can be one or more PCR indices or index ranges, separated by comma.\n"
 		"Using \"all\" selects all applicable PCR registers.\n"
@@ -1626,6 +1630,9 @@ main(int argc, char **argv)
 			break;
 		case OPT_EFIVAR_KEK:
 			opt_efivar_kek = optarg;
+			break;
+		case OPT_OWNER_PASSWORD:
+			tss_set_owner_password(optarg);
 			break;
 		case 'h':
 			usage(0, NULL);

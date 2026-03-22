@@ -38,6 +38,31 @@
 
 uint32_t	esys_tr_rh_null = ~0;
 uint32_t	esys_tr_rh_owner = ~0;
+static const char *opt_owner_password = NULL;
+
+void
+tss_set_owner_password(const char *password)
+{
+	opt_owner_password = password;
+}
+
+static void
+tss_apply_owner_auth(ESYS_CONTEXT *esys_ctx, const char *password)
+{
+	TPM2B_AUTH authValue = { .size = 0 };
+	TSS2_RC rc;
+
+	if (password) {
+		authValue.size = strlen(password);
+		if (authValue.size > sizeof(authValue.buffer))
+			fatal("Owner password too long");
+		memcpy(authValue.buffer, password, authValue.size);
+	}
+
+	rc = Esys_TR_SetAuth(esys_ctx, esys_tr_rh_owner, &authValue);
+	if (!tss_check_error(rc, "Unable to set owner auth"))
+		fatal("Aborting.\n");
+}
 
 void
 tss_print_error(int rc, const char *msg)
@@ -81,6 +106,9 @@ tss_esys_context(void)
 			esys_tr_rh_null = TPM2_RH_NULL;
 			esys_tr_rh_owner = TPM2_RH_OWNER;
 		}
+
+		if (opt_owner_password)
+			tss_apply_owner_auth(esys_ctx, opt_owner_password);
 	}
 	return esys_ctx;
 }

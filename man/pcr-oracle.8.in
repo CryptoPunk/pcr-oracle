@@ -560,6 +560,10 @@ For the tpm2.0 format, there is an extra field, Name, for the authorized
 polices. This option is only valid when sigining the sealed key in
 \fBtpm2.0\fP format. The \fBName\fP is optional and only used for display
 purposes. If the user doesn't specify a name, the default name is 'default'.
+.TP
+.BI --owner-password " password
+Specify the password for the TPM owner hierarchy. This is used when creating
+the Storage Root Key (SRK) or loading objects from the owner hierarchy.
 .\" ##################################################################
 .\" # SEE ALSO
 .\" ##################################################################

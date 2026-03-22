@@ -29,6 +29,7 @@ extern uint32_t		esys_tr_rh_null;
 extern uint32_t		esys_tr_rh_owner;
 
 extern ESYS_CONTEXT *	tss_esys_context(void);
+extern void		tss_set_owner_password(const char *password);
 extern void		tss_print_error(int rc, const char *msg);
 
 extern TPM2B_PUBLIC *	tss_read_public_key(const char *);
