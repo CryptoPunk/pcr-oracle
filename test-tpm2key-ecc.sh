@@ -37,7 +37,7 @@ call_oracle \
 	--from current \
 	--input secret \
 	--output sealed \
-	--ecc-srk \
+	--srk-algorithm=ecc \
 	seal-secret $PCR_MASK
 
 echo "Unseal the sealed with PCR policy"
@@ -74,7 +74,7 @@ call_oracle \
 	--auth authorized.policy \
 	--input secret \
 	--output sealed \
-	--ecc-srk \
+	--srk-algorithm=ecc \
 	seal-secret
 
 for attempt in first second; do

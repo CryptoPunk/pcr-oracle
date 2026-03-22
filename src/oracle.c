@@ -95,7 +95,7 @@ enum {
 	OPT_RSA_PUBLIC_KEY,
 	OPT_RSA_GENERATE_KEY,
 	OPT_RSA_BITS,
-	OPT_ECC_SRK,
+	OPT_SRK_ALGORITHM,
 	OPT_INPUT,
 	OPT_OUTPUT,
 	OPT_AUTHORIZED_POLICY,
@@ -134,7 +134,7 @@ static struct option options[] = {
 	{ "public-key",		required_argument,	0,	OPT_RSA_PUBLIC_KEY },
 	{ "rsa-generate-key",	no_argument,		0,	OPT_RSA_GENERATE_KEY },
 	{ "rsa-bits",		required_argument,	0,	OPT_RSA_BITS },
-	{ "ecc-srk",		no_argument,		0,	OPT_ECC_SRK },
+	{ "srk-algorithm",	required_argument,	0,	OPT_SRK_ALGORITHM },
 	{ "input",		required_argument,	0,	OPT_INPUT },
 	{ "output",		required_argument,	0,	OPT_OUTPUT },
 	{ "authorized-policy",	required_argument,	0,	OPT_AUTHORIZED_POLICY },
@@ -1562,8 +1562,14 @@ main(int argc, char **argv)
 		case OPT_RSA_BITS:
 			opt_rsa_bits = optarg;
 			break;
-		case OPT_ECC_SRK:
-			set_srk_alg("ECC");
+		case OPT_SRK_ALGORITHM:
+			if (!strcasecmp(optarg, "ecc")) {
+				set_srk_alg("ECC");
+			} else if (!strcasecmp(optarg, "rsa")) {
+				set_srk_alg("RSA");
+			} else {
+				fatal("Unsupported SRK algorithm \"%s\"\n", optarg);
+			}
 			break;
 		case OPT_INPUT:
 			opt_input = optarg;
