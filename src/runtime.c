@@ -293,7 +293,7 @@ runtime_read_efi_application(const char *partition, const char *application)
 char *
 runtime_disk_for_partition(const char *part_dev)
 {
-	char *part_name;
+	const char *part_name;
 	char sys_block[PATH_MAX];
 	char sys_device[PATH_MAX];
 	ssize_t link_size;

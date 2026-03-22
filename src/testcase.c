@@ -183,13 +183,22 @@ static char *
 testcase_read_symlink(const char *directory, const char *name, const char *default_dir)
 {
 	char path[PATH_MAX], target[PATH_MAX], result[PATH_MAX];
+	ssize_t link_len;
+	int n;
 
-	snprintf(path, sizeof(path), "%s/%s", directory, name);
-	if (readlink(path, target, sizeof(target)) < 0)
+	n = snprintf(path, sizeof(path), "%s/%s", directory, name);
+	if (n < 0 || n >= sizeof(path))
+		fatal("Path too long: %s/%s\n", directory, name);
+
+	link_len = readlink(path, target, sizeof(target) - 1);
+	if (link_len < 0)
 		fatal("Cannot read symlink %s: %m\n", path);
+	target[link_len] = '\0';
 
 	if (target[0] != '/' && default_dir) {
-		snprintf(result, sizeof(result), "%s/%s", default_dir, target);
+		n = snprintf(result, sizeof(result), "%s/%s", default_dir, target);
+		if (n < 0 || n >= sizeof(result))
+			fatal("Resolved symlink path too long for %s\n", path);
 		return strdup(result);
 	}
 
