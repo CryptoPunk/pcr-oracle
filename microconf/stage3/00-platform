@@ -53,6 +53,8 @@ else
 		:
 	elif [ -f "/etc/os-release" ]; then
 		case $(cat /etc/os-release) in
+        *Arch*)
+            uc_os_vendor=arch;;
 		*Debian*)
 			uc_os_vendor=debian;;
 		*Fedora*)
@@ -86,7 +88,7 @@ fi
 ##################################################################
 # Detect cpu word size
 ##################################################################
-case $(arch) in
+case $(uname -m) in
 x86_64|aarch64|pp64*|s390x)
 	__uc_arch_lib=lib64;;
 *)
