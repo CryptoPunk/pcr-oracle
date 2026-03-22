@@ -20,7 +20,19 @@ function call_oracle {
 
 if [ -z "$TESTDIR" ]; then
 	tmpdir=$(mktemp -d /tmp/pcrtestXXXXXX)
-	trap "cd / && rm -rf $tmpdir" 0 1 2 10 11 15
+
+	mkdir -p $tmpdir/swtpm
+	swtpm socket --tpmstate dir=$tmpdir/swtpm --tpm2 --ctrl type=tcp,port=2322 --server type=tcp,port=2321 --flags not-need-init,startup-clear &
+	SWTPM_PID=$!
+	sleep 1
+
+	export TPM2TOOLS_TCTI="swtpm:port=2321"
+	export TPM2_PKCS11_TCTI="swtpm:port=2321"
+	export TPM2_ABRMD_TCTI="swtpm:port=2321"
+
+	tpm2_startup -c
+
+	trap "kill $SWTPM_PID 2>/dev/null; cd / && rm -rf $tmpdir" 0 1 2 10 11 15
 
 	TESTDIR=$tmpdir
 fi
