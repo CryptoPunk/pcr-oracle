@@ -194,7 +194,7 @@ usage(int exitval, const char *msg)
 		"  string                 The PCR is extended with the string argument.\n"
 		"  file                   The argument is taken as a file name. The PCR is extended with the file's content.\n"
 		"  bsa                    The argument is a file name for a (new) Boot Services Application. The PCR is\n"
-		"	                  extended with the authenticode digest for that file.\n"
+		"                         extended with the authenticode digest for that file.\n"
 		"  eventlog               Process the eventlog and apply updates for all events possible.\n"
 		"\n"
 		"After the PCR predictor has been extended with all updates specified, its value is printed to standard output.\n"
@@ -675,7 +675,7 @@ predictor_pre_scan_eventlog(struct predictor *pred, tpm_event_t **stop_event_p)
 				if (pred->pcr_mask & (1<<ev->pcr_index))
 					fatal("Aborting.\n");
 				else
-					debug("Ignoring: event PCR %d\n", ev->pcr_index);
+					debug("Ignoring: event PCR %d isn't watched\n", ev->pcr_index);
 			}
 		}
 
@@ -1219,6 +1219,7 @@ main(int argc, char **argv)
 	switch (action) {
 	case ACTION_PREDICT:
 		pcr_selection = get_pcr_selection_argument(argc, argv, opt_algo);
+		end_arguments(argc, argv);
 		break;
 
 	case ACTION_STORE_PUBLIC_KEY:
