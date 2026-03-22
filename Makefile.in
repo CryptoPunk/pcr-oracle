@@ -56,6 +56,7 @@ man/%.8: man/%.8.in
 	./microconf/subst $@
 
 clean:
+	rm -f man/pcr-oracle.8 src/config.h Makefile
 	rm -f $(TOOLS)
 	rm -rf build
 	rm -rf $(TMPINSTALLDIR)
