@@ -32,7 +32,7 @@
 #include "runtime.h"
 #include "pcr.h"
 #include "digest.h"
-#include "rsa.h"
+#include "key.h"
 #include "store.h"
 #include "testcase.h"
 #include "sd-boot.h"
@@ -46,7 +46,7 @@ enum {
 	ACTION_UNSEAL,
 	ACTION_SIGN,
 	ACTION_SELFTEST,
-	ACTION_RSATEST,
+	ACTION_KEYTEST,
 	ACTION_GARDEN,
 };
 
@@ -91,10 +91,11 @@ enum {
 	OPT_CREATE_TESTCASE,
 	OPT_REPLAY_TESTCASE,
 	OPT_TPM_EVENTLOG,
-	OPT_RSA_PRIVATE_KEY,
-	OPT_RSA_PUBLIC_KEY,
-	OPT_RSA_GENERATE_KEY,
-	OPT_RSA_BITS,
+	OPT_PRIVATE_KEY,
+	OPT_PUBLIC_KEY,
+	OPT_GENERATE_KEY,
+	OPT_KEY_ALGORITHM,
+	OPT_KEY_BITS,
 	OPT_SRK_ALGORITHM,
 	OPT_INPUT,
 	OPT_OUTPUT,
@@ -130,10 +131,11 @@ static struct option options[] = {
 	{ "create-testcase",	required_argument,	0,	OPT_CREATE_TESTCASE },
 	{ "replay-testcase",	required_argument,	0,	OPT_REPLAY_TESTCASE },
 
-	{ "private-key",	required_argument,	0,	OPT_RSA_PRIVATE_KEY },
-	{ "public-key",		required_argument,	0,	OPT_RSA_PUBLIC_KEY },
-	{ "rsa-generate-key",	no_argument,		0,	OPT_RSA_GENERATE_KEY },
-	{ "rsa-bits",		required_argument,	0,	OPT_RSA_BITS },
+	{ "private-key",	required_argument,	0,	OPT_PRIVATE_KEY },
+	{ "public-key",		required_argument,	0,	OPT_PUBLIC_KEY },
+	{ "generate-key",	no_argument,		0,	OPT_GENERATE_KEY },
+	{ "key-algorithm",	required_argument,	0,	OPT_KEY_ALGORITHM },
+	{ "key-bits",		required_argument,	0,	OPT_KEY_BITS },
 	{ "srk-algorithm",	required_argument,	0,	OPT_SRK_ALGORITHM },
 	{ "input",		required_argument,	0,	OPT_INPUT },
 	{ "output",		required_argument,	0,	OPT_OUTPUT },
@@ -192,6 +194,16 @@ usage(int exitval, const char *msg)
 		"  --verify SOURCE        After applying all updates, compare the prediction against the given SOURCE (see below).\n"
 		"  --tpm-eventlog PATH\n"
 		"                         Specify a different TPM event log to process.\n"
+		"\n"
+		"Authorized policy options:\n"
+		"  --private-key PATH     Specify the private key file (PEM format by default)\n"
+		"  --public-key PATH      Specify the public key file (native TPM format by default)\n"
+		"  --generate-key         Generate a new asymmetric key if it doesn't exist\n"
+		"  --key-algorithm ALGO   Specify the algorithm for key generation (rsa, ecc). Default is rsa\n"
+		"  --key-bits BITS        Specify the key size in bits (for RSA)\n"
+		"  --auth PATH            Specify the authorized policy file\n"
+		"  --pcr-policy PATH      Specify the signed PCR policy file\n"
+		"  --target-platform PLAT Specify the target platform (e.g., tpm2.0, oldgrub)\n"
 		"\n"
 		"The pcr-index argument can be one or more PCR indices or index ranges, separated by comma.\n"
 		"Using \"all\" selects all applicable PCR registers.\n"
@@ -1120,7 +1132,7 @@ get_action_argument(int argc, char **argv)
 		{ "unseal-secret",		ACTION_UNSEAL	},
 		{ "sign",			ACTION_SIGN	},
 		{ "self-test",			ACTION_SELFTEST	},
-		{ "rsa-test",			ACTION_RSATEST	},
+		{ "key-test",			ACTION_KEYTEST	},
 		{ "garden",			ACTION_GARDEN	},
 
 		{ NULL, 0 },
@@ -1476,10 +1488,11 @@ main(int argc, char **argv)
 	char *opt_output = NULL;
 	char *opt_authorized_policy = NULL;
 	char *opt_pcr_policy = NULL;
-	stored_key_t *opt_rsa_private_key = NULL;
-	stored_key_t *opt_rsa_public_key = NULL;
-	bool opt_rsa_generate = false;
-	char *opt_rsa_bits = NULL;
+	stored_key_t *opt_private_key = NULL;
+	stored_key_t *opt_public_key = NULL;
+	bool opt_generate_key = false;
+	const char *opt_key_algorithm = "rsa";
+	char *opt_key_bits = NULL;
 	char *opt_policy_name = NULL;
 	char *opt_target_platform = NULL;
 	char *opt_boot_entry = NULL;
@@ -1490,7 +1503,7 @@ main(int argc, char **argv)
 	char *opt_efivar_kek = NULL;
 	const target_platform_t *target;
 	unsigned int action_flags = 0;
-	unsigned int rsa_bits = 2048;
+	unsigned int key_bits = 2048;
 	int c, exit_code = 0;
 
 	set_srk_alg("RSA");
@@ -1548,19 +1561,22 @@ main(int argc, char **argv)
 		case OPT_REPLAY_TESTCASE:
 			opt_replay_testcase = optarg;
 			break;
-		case OPT_RSA_PRIVATE_KEY:
+		case OPT_PRIVATE_KEY:
 			/* The private key file uses PEM format by default */
-			opt_rsa_private_key = stored_key_new_private(STORED_KEY_FMT_PEM, optarg);
+			opt_private_key = stored_key_new_private(STORED_KEY_FMT_PEM, optarg);
 			break;
-		case OPT_RSA_PUBLIC_KEY:
+		case OPT_PUBLIC_KEY:
 			/* The public key file uses native TPM format by default */
-			opt_rsa_public_key = stored_key_new_private(STORED_KEY_FMT_NATIVE, optarg);
+			opt_public_key = stored_key_new_private(STORED_KEY_FMT_NATIVE, optarg);
 			break;
-		case OPT_RSA_GENERATE_KEY:
-			opt_rsa_generate = true;
+		case OPT_GENERATE_KEY:
+			opt_generate_key = true;
 			break;
-		case OPT_RSA_BITS:
-			opt_rsa_bits = optarg;
+		case OPT_KEY_ALGORITHM:
+			opt_key_algorithm = optarg;
+			break;
+		case OPT_KEY_BITS:
+			opt_key_bits = optarg;
 			break;
 		case OPT_SRK_ALGORITHM:
 			if (!strcasecmp(optarg, "ecc")) {
@@ -1632,17 +1648,15 @@ main(int argc, char **argv)
 	if (!opt_replay_testcase && opt_compare_current)
 		fatal("--compare-current is only valid for --replay-testcase\n");
 
-	if (opt_rsa_bits) {
-		if (strcmp(opt_rsa_bits, "2048") == 0)
-			rsa_bits = 2048;
+	if (opt_key_bits) {
+		if (strcmp(opt_key_bits, "2048") == 0)
+			key_bits = 2048;
+		else if (strcmp(opt_key_bits, "3072") == 0)
+			key_bits = 3072;
+		else if (strcmp(opt_key_bits, "4096") == 0)
+			key_bits = 4096;
 		else
-		if (strcmp(opt_rsa_bits, "3072") == 0)
-			rsa_bits = 3072;
-		else
-		if (strcmp(opt_rsa_bits, "4096") == 0)
-			rsa_bits = 4096;
-		else
-			fatal("Unsupported RSA bits: %s\n", opt_rsa_bits);
+			fatal("Unsupported key bits: %s\n", opt_key_bits);
 	}
 
 	if (opt_target_platform == NULL)
@@ -1658,10 +1672,10 @@ main(int argc, char **argv)
 		break;
 
 	case ACTION_STORE_PUBLIC_KEY:
-		if (opt_rsa_private_key == NULL)
+		if (opt_private_key == NULL)
 			usage(1, "You need to specify the RSA secret key using --private-key option\n");
-		if (opt_rsa_public_key == NULL && opt_output)
-			opt_rsa_public_key = stored_key_new_public(STORED_KEY_FMT_NATIVE, opt_output);
+		if (opt_public_key == NULL && opt_output)
+			opt_public_key = stored_key_new_public(STORED_KEY_FMT_NATIVE, opt_output);
 		end_arguments(argc, argv);
 		break;
 
@@ -1670,7 +1684,7 @@ main(int argc, char **argv)
 			warning("Ignoring --input option when creating authorized policy\n");
 		if (opt_output != NULL)
 			warning("Ignoring --output option when creating authorized policy\n");
-		if (opt_rsa_private_key == NULL)
+		if (opt_private_key == NULL)
 			usage(1, "You need to specify the --private-key option when creating an authorized policy\n");
 		pcr_selection = get_pcr_selection_argument(argc, argv, opt_algo);
 		end_arguments(argc, argv);
@@ -1685,9 +1699,9 @@ main(int argc, char **argv)
 	case ACTION_UNSEAL:
 		action_flags = target_platform_unseal_flags(target);
 		if (action_flags & PLATFORM_OPTIONAL_PCR_POLICY) {
-			if (opt_rsa_public_key == NULL && opt_pcr_policy)
+			if (opt_public_key == NULL && opt_pcr_policy)
 				usage(1, "You need to specify the --public-key option when unsealing using an authorized policy\n");
-			if (opt_pcr_policy == NULL && opt_rsa_public_key)
+			if (opt_pcr_policy == NULL && opt_public_key)
 				usage(1, "You need to specify the --pcr-policy option when unsealing using an authorized policy\n");
 		}
 
@@ -1701,7 +1715,7 @@ main(int argc, char **argv)
 		break;
 
 	case ACTION_SIGN:
-		if (opt_rsa_private_key == NULL)
+		if (opt_private_key == NULL)
 			usage(1, "You need to specify the --private-key option when signing a policy\n");
 		if (opt_output == NULL)
 			usage(1, "You need to specify the --output option when signing a policy\n");
@@ -1714,7 +1728,7 @@ main(int argc, char **argv)
 		end_arguments(argc, argv);
 		break;
 
-	case ACTION_RSATEST:
+	case ACTION_KEYTEST:
 		end_arguments(argc, argv);
 		break;
 
@@ -1730,29 +1744,29 @@ main(int argc, char **argv)
 	 * doesn't add anything beyond what "openssl genrsa" would do,
 	 * except it saves you from installing the openssl tool suite
 	 * if you don't want it. */
-	if (opt_rsa_generate && (action == ACTION_CREATE_AUTH_POLICY ||
+	if (opt_generate_key && (action == ACTION_CREATE_AUTH_POLICY ||
 				 action == ACTION_STORE_PUBLIC_KEY ||
 				 action == ACTION_SIGN)) {
-		tpm_rsa_key_t *key;
+		tpm_key_t *key;
 
-		infomsg("Generating new RSA key\n");
-		if (!(key = tpm_rsa_generate(rsa_bits)))
+		infomsg("Generating new %s key\n", opt_key_algorithm);
+		if (!(key = tpm_key_generate(opt_key_algorithm, key_bits)))
 			return 1;
-		if (!stored_key_write_rsa_private(opt_rsa_private_key, key))
+		if (!stored_key_write_private(opt_private_key, key))
 			return 1;
 	}
 
-	if (action == ACTION_RSATEST) {
-		if (tpm_rsa_bits_test(rsa_bits)) {
-			infomsg("RSA %u supported\n", rsa_bits);
+	if (action == ACTION_KEYTEST) {
+		if (tpm_key_bits_test(key_bits)) {
+			infomsg("RSA %u supported\n", key_bits);
 			return 0;
 		} else {
-			infomsg("RSA %u unsupported\n", rsa_bits);
+			infomsg("RSA %u unsupported\n", key_bits);
 			return 1;
 		}
 	}
 
-	set_srk_rsa_bits (rsa_bits);
+	set_srk_rsa_bits(key_bits);
 
 	if (action == ACTION_SELFTEST) {
 		if (!tpm_selftest(true))
@@ -1770,14 +1784,14 @@ main(int argc, char **argv)
         }
 
 	if (action == ACTION_CREATE_AUTH_POLICY) {
-		if (!pcr_authorized_policy_create(pcr_selection, opt_rsa_private_key, opt_authorized_policy))
+		if (!pcr_authorized_policy_create(pcr_selection, opt_private_key, opt_authorized_policy))
 			return 1;
 
 		return 0;
 	}
 
 	if (action == ACTION_STORE_PUBLIC_KEY) {
-		if (!pcr_store_public_key(opt_rsa_private_key, opt_rsa_public_key))
+		if (!pcr_store_public_key(opt_private_key, opt_public_key))
 			return 1;
 		return 0;
 	}
@@ -1792,7 +1806,7 @@ main(int argc, char **argv)
 	}
 
 	if (action == ACTION_UNSEAL) {
-		if (!pcr_unseal_secret(target, pcr_selection, opt_pcr_policy, opt_rsa_public_key, opt_input, opt_output))
+		if (!pcr_unseal_secret(target, pcr_selection, opt_pcr_policy, opt_public_key, opt_input, opt_output))
 			return 1;
 
 		return 0;
@@ -1837,7 +1851,7 @@ main(int argc, char **argv)
 			return 1;
 	} else
 	if (action == ACTION_SIGN) {
-		if (!pcr_policy_sign(target, &pred->prediction, opt_rsa_private_key, opt_input, opt_output, opt_policy_name))
+		if (!pcr_policy_sign(target, &pred->prediction, opt_private_key, opt_input, opt_output, opt_policy_name))
 			return 1;
 	}
 

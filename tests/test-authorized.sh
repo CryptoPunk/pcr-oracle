@@ -7,7 +7,7 @@ TARGET_PLATFORM="oldgrub"
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 call_oracle \
-	--rsa-generate-key \
+	--generate-key \
 	--private-key policy-key.pem \
 	--auth authorized.policy \
 	create-authorized-policy $PCR_MASK

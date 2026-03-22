@@ -18,27 +18,27 @@
  * Written by Olaf Kirch <okir@suse.com>
  */
 
-#ifndef RSA_H
-#define RSA_H
+#ifndef KEY_H
+#define KEY_H
 
 #include <tss2_tpm2_types.h>
 
-typedef struct tpm_rsa_key	tpm_rsa_key_t;
+typedef struct tpm_key	tpm_key_t;
 
-extern tpm_rsa_key_t *	tpm_rsa_key_read_public(const char *pathname);
-extern tpm_rsa_key_t *	tpm_rsa_key_read_private(const char *pathname);
-extern bool		tpm_rsa_key_write_public(const char *pathname,
-				const tpm_rsa_key_t *key);
-extern bool		tpm_rsa_key_write_private(const char *pathname,
-				const tpm_rsa_key_t *key);
-extern void		tpm_rsa_key_free(tpm_rsa_key_t *key);
-extern tpm_rsa_key_t *	tpm_rsa_generate(unsigned int bits);
-extern int		tpm_rsa_sign(const tpm_rsa_key_t *,
+extern tpm_key_t *	tpm_key_read_public(const char *pathname);
+extern tpm_key_t *	tpm_key_read_private(const char *pathname);
+extern bool		tpm_key_write_public(const char *pathname,
+				const tpm_key_t *key);
+extern bool		tpm_key_write_private(const char *pathname,
+				const tpm_key_t *key);
+extern void		tpm_key_free(tpm_key_t *key);
+extern tpm_key_t *	tpm_key_generate(const char *algorithm, unsigned int bits);
+extern bool		tpm_key_sign(const tpm_key_t *,
 				const void *tbs_data, size_t tbs_len,
-				void *sig_data, size_t sig_size);
+				TPMT_SIGNATURE *sig);
 
-extern TPM2B_PUBLIC *	tpm_rsa_key_to_tss2(const tpm_rsa_key_t *key);
+extern TPM2B_PUBLIC *	tpm_key_to_tss2(const tpm_key_t *key);
 
-extern const tpm_evdigest_t * tpm_rsa_key_public_digest(const tpm_rsa_key_t *pubkey);
+extern const tpm_evdigest_t * tpm_key_public_digest(const tpm_key_t *pubkey);
 
-#endif /* RSA_H */
+#endif /* KEY_H */

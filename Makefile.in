@@ -20,7 +20,7 @@ TMPINSTALLDIR=/tmp/$(NAME)
 
 ORACLE_SRCS	= oracle.c \
 		  pcr.c \
-		  rsa.c \
+		  key.c \
 		  pcr-policy.c \
 		  eventlog.c \
 		  efi-devpath.c \

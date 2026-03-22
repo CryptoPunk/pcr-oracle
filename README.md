@@ -79,14 +79,14 @@ have the following value(s)."
 
 With authorized PCR policies, you tell the TPM "Whenever I present
 you with a set of PCR register values, and a digital signature
-of these values signed with RSA key X, I want you to divulge the
+of these values signed with asymmetric key X, I want you to divulge the
 secret whenever PCR registers A, B, and C have the given values."
 
 In other words, with regular PCR policies, you tie the sealed
 secret to specific PCR values directly. Whereas an authorized policy
-inserts an RSA key in the middle - and if you update say the grub2
+inserts an asymmetric key in the middle - and if you update say the grub2
 boot loader, you do not re-seal the secret, you just re-compute
-the PCR values, and sign them with an RSA secret key.
+the PCR values, and sign them with a private key.
 
 How is this an improvement? After all, it's only a gradual difference
 if I leave a copy of a LUKS key on my disk, or an unencrypted RSA key

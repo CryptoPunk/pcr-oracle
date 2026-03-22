@@ -47,10 +47,10 @@ Policies come in.
 .P
 TPM Authorized Policies provide a mechanism by which a secret is not sealed
 to a set of specific PCR values, but to a list of PCR indices, and a public
-RSA key. This combination (PCR indices and public key) is called an
+asymmetric key. This combination (PCR indices and public key) is called an
 Authorized Policy.
 .P
-The owner of the system can then use the secret RSA key to "authorize"
+The owner of the system can then use the private key to "authorize"
 a specific set of PCR values, which is in essence a digital signature.
 .P
 When unsealing the secret during system boot, the boot loader would
@@ -64,7 +64,7 @@ be able to unseal the secret.
 The benefit of this approach is that you can now seal the secret (such as
 a LUKS password) once - and when we later update the boot loader, shim
 loader etc, we just have to authorize the new set of PCR values using the
-RSA secret key.
+private key.
 .P
 .\" ##################################################################
 .\" # Policy file formats
@@ -114,19 +114,19 @@ The \fBpcr-oracle\fP command supports the following actions:
 .B self-test
 Perform a TPM self-test to verify the chip exists and works.
 .TP
-.B rsa-test
-Check whether the TPM supports a given RSA key length. The desired key
-length is given using the \fB--rsa-bits\fP option.
+.B key-test
+Check whether the TPM supports a given key length. The desired key
+length is given using the \fB--key-bits\fP option.
 .TP
 .B predict
 Try to predict a specific set of PCR values.
 .TP
 .B create-authorized-policy
-Create a PCR authorized policy. Optionally, a new RSA key can be generated.
+Create a PCR authorized policy. Optionally, a new key can be generated.
 .TP
 .B store-public-key
 Given a private key, extract the public portion and write it to a separate
-file. This is useful when a secret key has been generated while creating
+file. This is useful when a private key has been generated while creating
 the authorized policy.
 .TP
 .B seal-secret
@@ -137,7 +137,7 @@ assume a limit of 128 bytes.
 .TP
 .B sign
 When using an authorized policy, predict a set of PCR values and sign them
-using an RSA key.
+using a private key.
 .TP
 .B unseal-secret
 This action exists primarily for test purposes. Given a sealed secret
@@ -171,7 +171,7 @@ this:
 .P
 .nf
 .in +2
-# pcr-oracle --rsa-bits 2048 rsa-test
+# pcr-oracle --key-bits 2048 key-test
 .fi
 .P
 This subcommand allows external programs, such as fde-tools, to find
@@ -512,26 +512,38 @@ is written to this location. For subsequent actions, such as \fBseal\fP,
 the policy will be read from this location.
 .TP
 .BI --private-key " path
-Specify the RSA secret key to be used with authorized policies.
-For notes on the file format, please see section \fBRSA Key File Formats\fP.
+Specify the private key to be used with authorized policies.
+For notes on the file format, please see section \fBAsymmetric Key File Formats\fP.
 .TP
 .BI --public-key " path
-Specify an RSA public key to be used with authorized policies.
-For notes on the file format, please see section \fBRSA Key File Formats\fP.
+Specify a public key to be used with authorized policies.
+For notes on the file format, please see section \fBAsymmetric Key File Formats\fP.
 .TP
-.BI --rsa-generate-key
+.BI --generate-key
 When used while creating an authorized policy, a signature, or when storing
-the public key, this will generate the RSA private key "on the
-fly". This should not be different from what \fBopenssl genrsa\fP
+the public key, this will generate the private key "on the
+fly". This should not be different from what \fBopenssl pkey\fP
 does; the only reason this switch exists is that it may save you from
 increasing the footprint of your installed system (by not having to
 install the openssl command line utilities, for example).
 .TP
-.BI --rsa-bits " bits
+.BI --key-algorithm " alg
+Specify the algorithm for key generation. Supported algorithms are
+.BR rsa " and " ecc .
+Default is
+.BR rsa .
+.TP
+.BI --key-bits " bits
 By default, RSA 2048 is used as the algorithm to create the public and
-private key and configure the storage root key(SRK) in TPM. This option
-allows the user to specify the larger RSA key size. The supported key
+private key. This option
+allows the user to specify a different RSA key size. The supported key
 sizes are: 2048, 3072, and 4096 bits.
+.TP
+.BI --srk-algorithm " alg
+Specify the algorithm for the Storage Root Key (SRK). Supported algorithms are
+.BR rsa " and " ecc .
+Default is
+.BR rsa .
 .TP
 .BI --tpm-eventlog " path
 By default, the tool will read the current TPM event log. It is possible

@@ -96,7 +96,7 @@ tpm_selftest(bool fulltest)
 }
 
 bool
-tpm_rsa_bits_test(unsigned int rsa_bits)
+tpm_key_bits_test(unsigned int rsa_bits)
 {
 	ESYS_CONTEXT *esys_ctx = tss_esys_context();
 	TPMT_PUBLIC_PARMS rsa_parms = {

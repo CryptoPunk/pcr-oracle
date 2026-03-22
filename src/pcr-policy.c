@@ -35,7 +35,7 @@
 #include "pcr.h"
 #include "digest.h"
 #include "store.h"
-#include "rsa.h"
+#include "key.h"
 #include "bufparser.h"
 #include "tpm.h"
 #include "config.h"
@@ -54,13 +54,15 @@ struct target_platform {
 					const char *policy_name,
 					const tpm_pcr_bank_t *bank,
 					const TPM2B_DIGEST *pcr_policy,
-					const tpm_rsa_key_t *signing_key,
+					const tpm_key_t *signing_key,
 					const TPMT_SIGNATURE *signed_policy);
 	bool		(*unseal_secret)(const char *input_path, const char *output_path,
 					const tpm_pcr_selection_t *pcr_selection,
 					const char *signed_policy_path,
 					const stored_key_t *public_key_file);
 };
+
+static inline TPMI_ALG_HASH __TPMT_SIGNATURE_get_hash_alg(const TPMT_SIGNATURE *sig);
 
 static TPM2B_PUBLIC RSA_SRK_template = {
 	.size = sizeof(TPMT_PUBLIC),
@@ -796,10 +798,10 @@ esys_unseal_authorized(ESYS_CONTEXT *esys_context,
 	TPM2_RC rc;
 	bool okay = false;
 
-	if (policy_signature->sigAlg != TPM2_ALG_RSASSA)
+	if (policy_signature->sigAlg != TPM2_ALG_RSASSA && policy_signature->sigAlg != TPM2_ALG_ECDSA)
 		warning("%s: bad sigAlg %x\n", __func__, policy_signature->sigAlg);
-	if (policy_signature->signature.rsassa.hash != TPM2_ALG_SHA256)
-		warning("%s: bad hash %x\n", __func__, policy_signature->signature.rsassa.hash);
+	if (__TPMT_SIGNATURE_get_hash_alg((TPMT_SIGNATURE *) policy_signature) != TPM2_ALG_SHA256)
+		warning("%s: bad hash %x\n", __func__, __TPMT_SIGNATURE_get_hash_alg((TPMT_SIGNATURE *) policy_signature));
 
 	pcr_bank_to_selection(&pcrs, bank);
 
@@ -887,28 +889,35 @@ cleanup:
 }
 
 static bool
-__pcr_policy_sign(const tpm_rsa_key_t *rsa_key, const TPM2B_DIGEST *authorized_policy, TPMT_SIGNATURE **signed_policy)
+__pcr_policy_sign(const tpm_key_t *asym_key, const TPM2B_DIGEST *authorized_policy, TPMT_SIGNATURE **signed_policy)
 {
 	TPMT_SIGNATURE *result;
-	TPM2B_PUBLIC_KEY_RSA *sigbuf;
+	TPM2B_PUBLIC *pubkey;
 
 	*signed_policy = NULL;
+
+	pubkey = tpm_key_to_tss2(asym_key);
+	if (!pubkey)
+		return false;
+
 	result = calloc(1, sizeof(*result));
 
-	result->sigAlg = TPM2_ALG_RSASSA;
-	result->signature.rsassa.hash = TPM2_ALG_SHA256;
+	if (pubkey->publicArea.type == TPM2_ALG_RSA) {
+		result->sigAlg = TPM2_ALG_RSASSA;
+		result->signature.rsassa.hash = TPM2_ALG_SHA256;
+	} else if (pubkey->publicArea.type == TPM2_ALG_ECC) {
+		result->sigAlg = TPM2_ALG_ECDSA;
+		result->signature.ecdsa.hash = TPM2_ALG_SHA256;
+	}
 
-	sigbuf = &result->signature.rsassa.sig;
-
-	sigbuf->size = tpm_rsa_sign(rsa_key,
-			authorized_policy->buffer, authorized_policy->size,
-			sigbuf->buffer, sizeof(sigbuf->buffer));
-	if (sigbuf->size <= 0) {
+	if (!tpm_key_sign(asym_key, authorized_policy->buffer, authorized_policy->size, result)) {
 		error("Unable to sign authorized policy\n");
 		free(result);
+		free(pubkey);
 		return false;
 	}
 
+	free(pubkey);
 	*signed_policy = result;
 
 	return true;
@@ -1038,13 +1047,13 @@ cleanup:
 bool
 pcr_store_public_key(const stored_key_t *private_key_file, const stored_key_t *public_key_file)
 {
-	tpm_rsa_key_t *pub_key;
+	tpm_key_t *pub_key;
 	bool okay = false;
 
 	/* Read the public key from the private key file */
 	if ((pub_key = stored_key_read_rsa_public(private_key_file)) != NULL) {
-		okay = stored_key_write_rsa_public(public_key_file, pub_key);
-		tpm_rsa_key_free(pub_key);
+		okay = stored_key_write_public(public_key_file, pub_key);
+		tpm_key_free(pub_key);
 	}
 
 	return okay;
@@ -1199,7 +1208,7 @@ pcr_policy_sign(const target_platform_t *platform, const tpm_pcr_bank_t *bank,
 {
 	ESYS_CONTEXT *esys_context = tss_esys_context();
 	TPM2B_DIGEST *pcr_policy = NULL;
-	tpm_rsa_key_t *rsa_key = NULL;
+	tpm_key_t *asym_key = NULL;
 	TPM2B_PUBLIC *pub_key = NULL;
 	TPMT_SIGNATURE *signed_policy = NULL;
 	bool okay = false;
@@ -1209,18 +1218,18 @@ pcr_policy_sign(const target_platform_t *platform, const tpm_pcr_bank_t *bank,
 		goto out;
 	}
 
-	if (!(rsa_key = stored_key_read_rsa_private(private_key_file)))
+	if (!(asym_key = stored_key_read_rsa_private(private_key_file)))
 		goto out;
 
 	if (!(pcr_policy = __pcr_policy_make(esys_context, bank)))
 		goto out;
 
-	if (!__pcr_policy_sign(rsa_key, pcr_policy, &signed_policy))
+	if (!__pcr_policy_sign(asym_key, pcr_policy, &signed_policy))
 		goto out;
 
 	okay = platform->write_signed_policy(input_path, output_path,
 			policy_name, bank, pcr_policy,
-			rsa_key, signed_policy);
+			asym_key, signed_policy);
 	if (okay)
 		infomsg("Signed PCR policy written to %s\n", output_path?: "(standard output)");
 
@@ -1231,8 +1240,8 @@ out:
 		free(signed_policy);
 	if (pub_key)
 		free(pub_key);
-	if (rsa_key)
-		tpm_rsa_key_free(rsa_key);
+	if (asym_key)
+		tpm_key_free(asym_key);
 
 	return okay;
 }
@@ -1251,7 +1260,7 @@ pcr_authorized_policy_unseal_secret(const tpm_pcr_selection_t *pcr_selection,
 	ESYS_CONTEXT *esys_context = tss_esys_context();
 	tpm_pcr_bank_t pcr_current_bank;
 	TPMT_SIGNATURE *policy_signature = NULL;
-	tpm_rsa_key_t *rsa_key = NULL;
+	tpm_key_t *asym_key = NULL;
 	TPM2B_PUBLIC *pub_key = NULL;
 	TPM2B_PRIVATE *sealed_private = NULL;
 	TPM2B_PUBLIC *sealed_public = NULL;
@@ -1293,14 +1302,14 @@ cleanup:
 		free(policy_signature);
 	if (pub_key)
 		free(pub_key);
-	if (rsa_key)
-		tpm_rsa_key_free(rsa_key);
+	if (asym_key)
+		tpm_key_free(asym_key);
 
 	return okay;
 }
 
 static inline TPMI_ALG_HASH
-__TPMT_SIGNATURE_get_hash_alg (TPMT_SIGNATURE *sig)
+__TPMT_SIGNATURE_get_hash_alg (const TPMT_SIGNATURE *sig)
 {
   switch (sig->sigAlg)
     {
@@ -1602,7 +1611,7 @@ oldgrub_write_signed_policy(const char *input_path, const char *output_path,
 					const char *policy_name,
 					const tpm_pcr_bank_t *bank,
 					const TPM2B_DIGEST *pcr_policy,
-					const tpm_rsa_key_t *signing_key,
+					const tpm_key_t *signing_key,
 					const TPMT_SIGNATURE *signed_policy)
 {
 	/* Just write the signature, that's all */
@@ -1658,7 +1667,7 @@ tpm2key_write_signed_policy(const char *input_path, const char *output_path,
 					const char *policy_name,
 					const tpm_pcr_bank_t *bank,
 					const TPM2B_DIGEST *pcr_policy,
-					const tpm_rsa_key_t *signing_key,
+					const tpm_key_t *signing_key,
 					const TPMT_SIGNATURE *signed_policy)
 {
 	TSSPRIVKEY *tpm2key = NULL;
@@ -1676,7 +1685,7 @@ tpm2key_write_signed_policy(const char *input_path, const char *output_path,
 	if (!tpm2key_read_file(input_path, &tpm2key))
 		goto out;
 
-	if (!(pub_key = tpm_rsa_key_to_tss2(signing_key)))
+	if (!(pub_key = tpm_key_to_tss2(signing_key)))
 		goto out;
 
 	if (!pcr_bank_to_selection(&pcr_sel, bank))
@@ -1702,7 +1711,7 @@ systemd_write_signed_policy(const char *input_path, const char *output_path,
 					const char *policy_name,
 					const tpm_pcr_bank_t *bank,
 					const TPM2B_DIGEST *pcr_policy,
-					const tpm_rsa_key_t *signing_key,
+					const tpm_key_t *signing_key,
 					const TPMT_SIGNATURE *signed_policy)
 {
 	const tpm_evdigest_t *digest;
@@ -1713,9 +1722,21 @@ systemd_write_signed_policy(const char *input_path, const char *output_path,
 		return false;
 	}
 
-	if (!(digest = tpm_rsa_key_public_digest(signing_key))) {
+	if (!(digest = tpm_key_public_digest(signing_key))) {
 		error("%s: cannot compute signing key fingerprint\n", __func__);
 		return false;
+	}
+
+	uint8_t sig_buffer[1024];
+	size_t sig_size = 0;
+
+	if (signed_policy->sigAlg == TPM2_ALG_RSASSA) {
+		sig_size = signed_policy->signature.rsassa.sig.size;
+		memcpy(sig_buffer, signed_policy->signature.rsassa.sig.buffer, sig_size);
+	} else if (signed_policy->sigAlg == TPM2_ALG_ECDSA) {
+		sig_size = signed_policy->signature.ecdsa.signatureR.size + signed_policy->signature.ecdsa.signatureS.size;
+		memcpy(sig_buffer, signed_policy->signature.ecdsa.signatureR.buffer, signed_policy->signature.ecdsa.signatureR.size);
+		memcpy(sig_buffer + signed_policy->signature.ecdsa.signatureR.size, signed_policy->signature.ecdsa.signatureS.buffer, signed_policy->signature.ecdsa.signatureS.size);
 	}
 
 	okay = sdb_policy_file_add_entry(output_path,
@@ -1727,7 +1748,7 @@ systemd_write_signed_policy(const char *input_path, const char *output_path,
 			/* policy */
 			pcr_policy->buffer, pcr_policy->size,
 			/* signature */
-			signed_policy->signature.rsassa.sig.buffer, signed_policy->signature.rsassa.sig.size);
+			sig_buffer, sig_size);
 
 	return okay;
 }

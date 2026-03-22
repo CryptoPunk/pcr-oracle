@@ -25,7 +25,7 @@
 #include <tss2_esys.h>
 
 #include "types.h"
-#include "rsa.h"
+#include "key.h"
 
 enum {
 	STORED_KEY_FMT_PEM		= 1,
@@ -41,10 +41,10 @@ struct stored_key {
 extern stored_key_t *	stored_key_new_public(int objfmt, const char *pathname);
 extern stored_key_t *	stored_key_new_private(int objfmt, const char *pathname);
 extern void		stored_key_free(stored_key_t *);
-extern tpm_rsa_key_t *	stored_key_read_rsa_public(const stored_key_t *);
-extern bool		stored_key_write_rsa_public(const stored_key_t *, const tpm_rsa_key_t *key);
-extern tpm_rsa_key_t *	stored_key_read_rsa_private(const stored_key_t *);
-extern bool		stored_key_write_rsa_private(const stored_key_t *, const tpm_rsa_key_t *key);
+extern tpm_key_t *	stored_key_read_rsa_public(const stored_key_t *);
+extern bool		stored_key_write_public(const stored_key_t *, const tpm_key_t *key);
+extern tpm_key_t *	stored_key_read_rsa_private(const stored_key_t *);
+extern bool		stored_key_write_private(const stored_key_t *, const tpm_key_t *key);
 extern TPM2B_PUBLIC *	stored_key_read_native_public(const stored_key_t *);
 extern bool		stored_key_write_native_public(const stored_key_t *, const TPM2B_PUBLIC *);
 

@@ -11,7 +11,7 @@ SIGNED_POLICY_FILE=systemd-policy.json
 rm -f sealed recovered
 
 call_oracle \
-	--rsa-generate-key \
+	--generate-key \
 	--private-key policy-key.pem \
 	--auth $POLICY_FILE \
 	create-authorized-policy $PCR_MASK

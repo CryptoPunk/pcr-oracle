@@ -27,12 +27,12 @@
 /* We do not have automatic conversion of TPM2B_PUBLIC to RSA yet (and so far we haven't needed it) */
 #undef WITH_NATIVE_TO_RSA_CONVERSTION
 
-tpm_rsa_key_t *
+tpm_key_t *
 stored_key_read_rsa_private(const stored_key_t *sk)
 {
 	switch (sk->format) {
 	case STORED_KEY_FMT_PEM:
-		return tpm_rsa_key_read_private(sk->path);
+		return tpm_key_read_private(sk->path);
 	}
 
 	error("Unable to read RSA private key from file \"%s\": unsupported format\n", sk->path);
@@ -40,7 +40,7 @@ stored_key_read_rsa_private(const stored_key_t *sk)
 }
 
 bool
-stored_key_write_rsa_private(const stored_key_t *sk, const tpm_rsa_key_t *key)
+stored_key_write_private(const stored_key_t *sk, const tpm_key_t *key)
 {
 	if (!sk->is_private) {
 		error("Refusing to write RSA private key to file \"%s\": file is supposed to contain public key\n", sk->path);
@@ -49,14 +49,14 @@ stored_key_write_rsa_private(const stored_key_t *sk, const tpm_rsa_key_t *key)
 
 	switch (sk->format) {
 	case STORED_KEY_FMT_PEM:
-		return tpm_rsa_key_write_private(sk->path, key);
+		return tpm_key_write_private(sk->path, key);
 	}
 
 	error("Unable to write RSA private key to file \"%s\": unsupported format\n", sk->path);
 	return false;
 }
 
-tpm_rsa_key_t *
+tpm_key_t *
 stored_key_read_rsa_public(const stored_key_t *sk)
 {
 	debug2("Trying to read RSA public key from %s file %s\n",
@@ -69,7 +69,7 @@ stored_key_read_rsa_public(const stored_key_t *sk)
 
 	switch (sk->format) {
 	case STORED_KEY_FMT_PEM:
-		return tpm_rsa_key_read_public(sk->path);
+		return tpm_key_read_public(sk->path);
 
 	case STORED_KEY_FMT_NATIVE:
 		error("Unable to read RSA public key from native file \"%s\": automatic conversion not implemented\n", sk->path);
@@ -81,11 +81,11 @@ stored_key_read_rsa_public(const stored_key_t *sk)
 }
 
 bool
-stored_key_write_rsa_public(const stored_key_t *sk, const tpm_rsa_key_t *key)
+stored_key_write_public(const stored_key_t *sk, const tpm_key_t *key)
 {
 	switch (sk->format) {
 	case STORED_KEY_FMT_PEM:
-		return tpm_rsa_key_write_public(sk->path, key);
+		return tpm_key_write_public(sk->path, key);
 
 	/* If the format is native, automatically convert the RSA key to a native TPM2B_PUBLIC blob */
 	case STORED_KEY_FMT_NATIVE:
@@ -93,7 +93,7 @@ stored_key_write_rsa_public(const stored_key_t *sk, const tpm_rsa_key_t *key)
 			TPM2B_PUBLIC *native_key;
 			bool ok;
 
-			native_key = tpm_rsa_key_to_tss2(key);
+			native_key = tpm_key_to_tss2(key);
 			if (native_key == NULL) {
 				error("Error writing RSA public key to native file %s: failed to convert key\n", sk->path);
 				return false;
@@ -122,15 +122,15 @@ stored_key_read_native_public(const stored_key_t *sk)
 
 	case STORED_KEY_FMT_PEM:
 		{
-			tpm_rsa_key_t *rsa_key;
+			tpm_key_t *asym_key;
 			TPM2B_PUBLIC *native_key;
 
-			rsa_key = stored_key_read_rsa_public(sk);
-			if (rsa_key == NULL)
+			asym_key = stored_key_read_rsa_public(sk);
+			if (asym_key == NULL)
 				return NULL;
 
-			native_key = tpm_rsa_key_to_tss2(rsa_key);
-			tpm_rsa_key_free(rsa_key);
+			native_key = tpm_key_to_tss2(asym_key);
+			tpm_key_free(asym_key);
 
 			if (native_key == NULL) {
 				error("Error reading TPM public key from native file %s: failed to convert key\n", sk->path);
