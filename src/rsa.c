@@ -197,24 +197,23 @@ fail:
 tpm_rsa_key_t *
 tpm_rsa_generate(unsigned int bits)
 {
-	BIGNUM *exp = NULL;
-	RSA *rsa = NULL;
+	EVP_PKEY_CTX *ctx = NULL;
 	EVP_PKEY *pkey = NULL;
 
-	exp = BN_new();
-	if (!BN_set_word(exp, RSA_F4))
+	ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+	if (!ctx)
 		goto failed;
 
-	rsa = RSA_new();
-	if (!RSA_generate_key_ex(rsa, bits, exp, NULL))
+	if (EVP_PKEY_keygen_init(ctx) <= 0)
 		goto failed;
 
-	BN_free(exp);
-	exp = NULL;
-
-	pkey = EVP_PKEY_new();
-	if (!EVP_PKEY_set1_RSA(pkey, rsa))
+	if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) <= 0)
 		goto failed;
+
+	if (EVP_PKEY_keygen(ctx, &pkey) <= 0)
+		goto failed;
+
+	EVP_PKEY_CTX_free(ctx);
 
 	return tpm_rsa_key_alloc("<generated>", pkey, true);
 
@@ -222,10 +221,8 @@ failed:
 	error("Failed to generate %u bit RSA key\n", bits);
 	if (pkey)
 		EVP_PKEY_free(pkey);
-	else if (rsa)
-		RSA_free(rsa);
-	if (exp)
-		BN_free(exp);
+	if (ctx)
+		EVP_PKEY_CTX_free(ctx);
 	return NULL;
 }
 
