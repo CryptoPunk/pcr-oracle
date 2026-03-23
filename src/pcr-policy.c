@@ -39,88 +39,15 @@
 #include "sd-boot.h"
 #include "store.h"
 #include "tpm.h"
+#include "pcr-policy.h"
 #include "tpm2key.h"
 #include "util.h"
 
-struct target_platform {
-  const char *name;
-  unsigned int unseal_flags;
-
-  bool (*write_sealed_secret)(const char *pathname,
-                              const TPML_PCR_SELECTION *pcr_sel,
-                              const TPM2B_PRIVATE *sealed_private,
-                              const TPM2B_PUBLIC *sealed_public);
-  bool (*write_signed_policy)(const char *input_path, const char *output_path,
-                              const char *policy_name,
-                              const tpm_pcr_bank_t *bank,
-                              const TPM2B_DIGEST *pcr_policy,
-                              const tpm_key_t *signing_key,
-                              const TPMT_SIGNATURE *signed_policy);
-  bool (*unseal_secret)(const char *input_path, const char *output_path,
-                        const tpm_pcr_selection_t *pcr_selection,
-                        const char *signed_policy_path,
-                        const stored_key_t *public_key_file);
-};
 
 static inline TPMI_ALG_HASH
 __TPMT_SIGNATURE_get_hash_alg(const TPMT_SIGNATURE *sig);
 
-static TPM2B_PUBLIC RSA_SRK_template = {
-    .size = sizeof(TPMT_PUBLIC),
-    .publicArea = {
-        .type = TPM2_ALG_RSA,
-        .nameAlg = TPM2_ALG_SHA256,
-        /* Per "Storage Primary Key (SRK) Templates" in section 7.5.1 of
-         * TCG TPM v2.0 Provisioning Guidance 1.0 Revision 1.0, the
-         * template for shared SRKs sets USERWITHAUTH and NODA. */
-        .objectAttributes = TPMA_OBJECT_RESTRICTED | TPMA_OBJECT_DECRYPT |
-                            TPMA_OBJECT_FIXEDTPM | TPMA_OBJECT_FIXEDPARENT |
-                            TPMA_OBJECT_SENSITIVEDATAORIGIN |
-                            TPMA_OBJECT_USERWITHAUTH | TPMA_OBJECT_NODA,
-        .parameters = {.rsaDetail = {.symmetric =
-                                         {
-                                             .algorithm = TPM2_ALG_AES,
-                                             .keyBits = {.sym = 128},
-                                             .mode = {.sym = TPM2_ALG_CFB},
-                                         },
-                                     .scheme = {TPM2_ALG_NULL},
-                                     .keyBits = 2048}}}};
-
-static TPM2B_PUBLIC ECC_SRK_template = {
-    .size = sizeof(TPMT_PUBLIC),
-    .publicArea = {
-        .type = TPM2_ALG_ECC,
-        .nameAlg = TPM2_ALG_SHA256,
-        /* Per "Storage Primary Key (SRK) Templates" in section 7.5.1 of
-         * TCG TPM v2.0 Provisioning Guidance 1.0 Revision 1.0, the
-         * template for shared SRKs sets USERWITHAUTH and NODA. */
-        .objectAttributes = TPMA_OBJECT_RESTRICTED | TPMA_OBJECT_DECRYPT |
-                            TPMA_OBJECT_FIXEDTPM | TPMA_OBJECT_FIXEDPARENT |
-                            TPMA_OBJECT_SENSITIVEDATAORIGIN |
-                            TPMA_OBJECT_USERWITHAUTH | TPMA_OBJECT_NODA,
-        .parameters = {.eccDetail = {.symmetric =
-                                         {
-                                             .algorithm = TPM2_ALG_AES,
-                                             .keyBits = {.sym = 128},
-                                             .mode = {.sym = TPM2_ALG_CFB},
-                                         },
-                                     .scheme = {TPM2_ALG_NULL},
-                                     .curveID = TPM2_ECC_NIST_P256,
-                                     .kdf.scheme = TPM2_ALG_NULL}}}};
-
 static const TPM2B_PUBLIC *SRK_template;
-
-static const TPM2B_PUBLIC seal_public_template = {
-    .size = sizeof(TPMT_PUBLIC),
-    .publicArea = {.type = TPM2_ALG_KEYEDHASH,
-                   .nameAlg = TPM2_ALG_SHA256,
-                   .objectAttributes =
-                       TPMA_OBJECT_FIXEDTPM | TPMA_OBJECT_FIXEDPARENT,
-                   .parameters = {.keyedHashDetail =
-                                      {
-                                          .scheme = {TPM2_ALG_NULL},
-                                      }},
-                   .unique = {.keyedHash = {.size = 32}}}};
 
 void set_srk_alg(const char *alg) {
   if (strcmp(alg, "RSA") == 0)

@@ -23,24 +23,26 @@
 
 #include "types.h"
 #include "digest.h"
+#include "pcr-policy.h"
 
 #define PCR_BANK_REGISTER_MAX	24
 
-typedef struct tpm_pcr_bank {
+struct tpm_pcr_bank {
 	uint32_t		pcr_mask;
 	uint32_t		valid_mask;
 	const char *		algo_name;
 	const tpm_algo_info_t *	algo_info;
 	tpm_evdigest_t		pcr[PCR_BANK_REGISTER_MAX];
-} tpm_pcr_bank_t;
+};
 
-typedef struct tpm_pcr_selection {
+
+struct tpm_pcr_selection {
 	unsigned int		pcr_mask;
 	const tpm_algo_info_t *	algo_info;
-} tpm_pcr_selection_t;
+};
 
-extern void		set_srk_alg (const char *alg);
-extern void		set_srk_rsa_bits (const unsigned int rsa_bits);
+
+
 extern void		pcr_bank_initialize(tpm_pcr_bank_t *bank, unsigned int pcr_mask, const tpm_algo_info_t *algo);
 extern bool		pcr_bank_wants_pcr(tpm_pcr_bank_t *bank, unsigned int index);
 extern void		pcr_bank_mark_valid(tpm_pcr_bank_t *bank, unsigned int index);

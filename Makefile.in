@@ -22,6 +22,7 @@ ORACLE_SRCS	= oracle.c \
 		  pcr.c \
 		  key.c \
 		  pcr-policy.c \
+		  pcr-policy-defs.c \
 		  eventlog.c \
 		  efi-devpath.c \
 		  efi-variable.c \

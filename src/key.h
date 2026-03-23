@@ -22,8 +22,8 @@
 #define KEY_H
 
 #include <tss2_tpm2_types.h>
+#include "types.h"
 
-typedef struct tpm_key	tpm_key_t;
 
 extern tpm_key_t *	tpm_key_read_public(const char *pathname);
 extern tpm_key_t *	tpm_key_read_private(const char *pathname);
